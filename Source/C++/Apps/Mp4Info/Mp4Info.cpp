@@ -653,6 +653,16 @@ ShowSampleDescription_Text(AP4_SampleDescription& description, bool verbose)
         break;
       }
 
+      case AP4_SAMPLE_FORMAT_MLPA: {
+        // Dolby TrueHD specifics
+        AP4_DmlpAtom* dmlp = AP4_DYNAMIC_CAST(AP4_DmlpAtom, desc->GetDetails().GetChild(AP4_ATOM_TYPE_DMLP));
+        if (dmlp) {
+            printf("    Format Info:    %d\n", dmlp->m_FormatInfo);
+            printf("    Peak Data Rate: %d\n", dmlp->m_PeakDataRate);
+        }
+        break;
+      }
+        
       // VPx Specifics
       case AP4_SAMPLE_FORMAT_VP8:
       case AP4_SAMPLE_FORMAT_VP9:
@@ -1079,6 +1089,22 @@ ShowSampleDescription_Json(AP4_SampleDescription& description, bool verbose)
         printf("   \"bl_present\": %s,\n", dvcc->GetBlPresentFlag()?"true":"false");
         printf("   \"dv_bl_signal_compatibility_id\": %d\n", dvcc->GetDvBlSignalCompatibilityID());
         printf("}");
+    }
+
+    // Color information from colr atom for non-VPx tracks
+    if (desc->GetFormat() != AP4_SAMPLE_FORMAT_VP8 &&
+        desc->GetFormat() != AP4_SAMPLE_FORMAT_VP9 &&
+        desc->GetFormat() != AP4_SAMPLE_FORMAT_VP10) {
+        AP4_ColrAtom* colr = AP4_DYNAMIC_CAST(AP4_ColrAtom, desc->GetDetails().GetChild(AP4_ATOM_TYPE_COLR));
+        if (colr && colr->GetColourParameterType() == AP4_SAMPLE_COLOR_TYPE_NCLX) {
+            printf(",\n");
+            printf("\"color_info\": {\n");
+            printf("    \"colour_primaries\":%d,\n", colr->GetPrimariesIndex());
+            printf("    \"transfer_characteristics\":%d,\n", colr->GetTransferFunctionIndex());
+            printf("    \"matrix_coefficients\":%d,\n", colr->GetMatrixIndex());
+            printf("    \"video_full_range_flag\":%s\n", colr->GetFullRangeFlag() ? "true" : "false");
+            printf("}");
+        }
     }
 
     printf("\n}");

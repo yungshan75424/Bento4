@@ -108,6 +108,7 @@
 #include "Ap4SidxAtom.h"
 #include "Ap4SbgpAtom.h"
 #include "Ap4SgpdAtom.h"
+#include "Ap4ColrAtom.h"
 
 /*----------------------------------------------------------------------
 |   AP4_AtomFactory::~AP4_AtomFactory
@@ -340,6 +341,10 @@ AP4_AtomFactory::CreateAtomFromStream(AP4_ByteStream& stream,
 
           case AP4_ATOM_TYPE_AC_4:
             atom = new AP4_Ac4SampleEntry(type, size_32, stream, *this);
+            break;
+
+          case AP4_ATOM_TYPE_MLPA:
+            atom = new AP4_MlpSampleEntry(type, size_32, stream, *this);
             break;
 
           case AP4_ATOM_TYPE_ALAC:
@@ -777,6 +782,13 @@ AP4_AtomFactory::CreateAtomFromStream(AP4_ByteStream& stream,
             }
             break;
 
+          case AP4_ATOM_TYPE_DMLP:
+            if (atom_is_large) return AP4_ERROR_INVALID_FORMAT;
+            if (GetContext() == AP4_ATOM_TYPE_MLPA || GetContext() == AP4_ATOM_TYPE_ENCA) {
+                atom = AP4_DmlpAtom::Create(size_32, stream);
+            }
+            break;
+
           // track ref types
           case AP4_ATOM_TYPE_HINT:
           case AP4_ATOM_TYPE_CDSC:
@@ -835,6 +847,10 @@ AP4_AtomFactory::CreateAtomFromStream(AP4_ByteStream& stream,
           case AP4_ATOM_TYPE_MDAT:
             // generic atoms
             break;
+          case AP4_ATOM_TYPE_COLR:
+              if (atom_is_large) return AP4_ERROR_INVALID_FORMAT;
+              atom = AP4_ColrAtom::Create(size_32, stream);
+              break;
             
           default: {
             // try all the external type handlers
