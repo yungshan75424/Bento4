@@ -165,3 +165,6 @@ AP4_SyntheticSampleTable_Create
 AP4_AtomInspector_Destroy
 AP4_PrintInspector_Create
 AP4_AtomInspector_FromDelegate
+
+AP4_DecryptFile
+AP4_DecryptFileW

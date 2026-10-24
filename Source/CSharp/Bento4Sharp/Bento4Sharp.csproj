@@ -1,0 +1,19 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <AssemblyName>Bento4Sharp</AssemblyName>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <None Include="..\..\..\Build\Targets\x86_64-microsoft-win32-vs2019\Bento4CDll\x64\Release\Bento4CDll.dll"
+          Link="runtimes\win-x64\native\Bento4CDll.dll"
+          CopyToOutputDirectory="PreserveNewest"
+          Condition="Exists('..\..\..\Build\Targets\x86_64-microsoft-win32-vs2019\Bento4CDll\x64\Release\Bento4CDll.dll')" />
+    <None Include="..\..\..\build-linux\libBento4C.so"
+          Link="runtimes\linux-x64\native\libBento4C.so"
+          CopyToOutputDirectory="PreserveNewest"
+          Condition="Exists('..\..\..\build-linux\libBento4C.so')" />
+  </ItemGroup>
+</Project>

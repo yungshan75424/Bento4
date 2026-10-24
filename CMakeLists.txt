@@ -85,10 +85,29 @@ target_include_directories(ap4 PUBLIC
   ${AP4_INCLUDE_DIRS}
 )
 
+option(BUILD_CAPI_SHARED_LIBRARY "Build the Bento4 C API shared library" OFF)
+if(BUILD_CAPI_SHARED_LIBRARY)
+  add_library(Bento4C SHARED
+    ${SOURCE_ROOT}/CApi/Bento4C.cpp
+    ${AP4_SOURCES}
+  )
+  target_include_directories(Bento4C PUBLIC
+    ${AP4_INCLUDE_DIRS}
+    $<BUILD_INTERFACE:${SOURCE_ROOT}/CApi>
+  )
+  set_target_properties(Bento4C PROPERTIES
+    OUTPUT_NAME "Bento4C"
+  )
+endif()
+
 # Use the statically linked C runtime library
 if(MSVC)
   set_property(TARGET ap4 PROPERTY MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
   target_compile_definitions(ap4 PRIVATE -D_LIB)
+  if(TARGET Bento4C)
+    set_property(TARGET Bento4C PROPERTY MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
+    target_compile_definitions(Bento4C PRIVATE -D_USRDLL)
+  endif()
 endif()
 
 # Apps
@@ -134,8 +153,13 @@ configure_file(
     @ONLY
 )
 
+set(BENTO4_INSTALL_TARGETS ap4 ${BENTO4_APPS_LOWERCASE})
+if(TARGET Bento4C)
+  list(APPEND BENTO4_INSTALL_TARGETS Bento4C)
+endif()
+
 install(
-    TARGETS ap4 ${BENTO4_APPS_LOWERCASE}
+    TARGETS ${BENTO4_INSTALL_TARGETS}
     EXPORT "${TARGETS_EXPORT_NAME}"
     LIBRARY DESTINATION "${CMAKE_INSTALL_LIBDIR}"
     ARCHIVE DESTINATION "${CMAKE_INSTALL_LIBDIR}"

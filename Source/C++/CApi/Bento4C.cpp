@@ -32,6 +32,15 @@
 #include "Bento4C.h"
 #include "Ap4.h"
 
+#if defined(_WIN32)
+#include <windows.h>
+#endif
+
+#include <stdlib.h>
+#include <string.h>
+#include <string>
+#include <vector>
+
 /*----------------------------------------------------------------------
 |   constants
 +---------------------------------------------------------------------*/
@@ -1383,5 +1392,234 @@ AP4_AtomInspector_FromDelegate(AP4_AtomInspectorDelegate* delegate)
     return new AP4_DelegatorAtomInspector(delegate);
 }
 
+/*----------------------------------------------------------------------
+|   AP4_Decrypt helpers
++---------------------------------------------------------------------*/
+static AP4_Result
+AP4_AddDecryptKey(AP4_ProtectionKeyMap& key_map, const char* key_spec)
+{
+    if (key_spec == NULL) {
+        return AP4_ERROR_INVALID_PARAMETERS;
+    }
+
+    std::vector<char> key_spec_copy(strlen(key_spec)+1);
+    strcpy(&key_spec_copy[0], key_spec);
+
+    char* keyid_text = NULL;
+    char* key_text = NULL;
+    if (AP4_SplitArgs(&key_spec_copy[0], keyid_text, key_text)) {
+        return AP4_ERROR_INVALID_PARAMETERS;
+    }
+
+    unsigned char key[16];
+    unsigned int  track_id = 0;
+    unsigned char kid[16];
+    if (strlen(keyid_text) == 32) {
+        if (AP4_ParseHex(keyid_text, kid, 16)) {
+            return AP4_ERROR_INVALID_PARAMETERS;
+        }
+    } else {
+        track_id = (unsigned int)strtoul(keyid_text, NULL, 10);
+        if (track_id == 0) {
+            return AP4_ERROR_INVALID_PARAMETERS;
+        }
+    }
+
+    if (AP4_ParseHex(key_text, key, 16)) {
+        return AP4_ERROR_INVALID_PARAMETERS;
+    }
+
+    if (track_id) {
+        return key_map.SetKey(track_id, key, 16);
+    } else {
+        return key_map.SetKeyForKid(kid, key, 16);
+    }
+}
+
+static AP4_Processor*
+AP4_CreateDecryptingProcessor(AP4_File& input_file, AP4_ProtectionKeyMap& key_map)
+{
+    AP4_Processor* processor = NULL;
+    AP4_FtypAtom* ftyp = input_file.GetFileType();
+    if (ftyp) {
+        if (ftyp->GetMajorBrand() == AP4_OMA_DCF_BRAND_ODCF || ftyp->HasCompatibleBrand(AP4_OMA_DCF_BRAND_ODCF)) {
+            processor = new AP4_OmaDcfDecryptingProcessor(&key_map);
+        } else if (ftyp->GetMajorBrand() == AP4_MARLIN_BRAND_MGSV || ftyp->HasCompatibleBrand(AP4_MARLIN_BRAND_MGSV)) {
+            processor = new AP4_MarlinIpmpDecryptingProcessor(&key_map);
+        } else if (ftyp->GetMajorBrand() == AP4_PIFF_BRAND || ftyp->HasCompatibleBrand(AP4_PIFF_BRAND)) {
+            processor = new AP4_CencDecryptingProcessor(&key_map);
+        }
+    }
+
+    if (processor == NULL) {
+        AP4_Movie* movie = input_file.GetMovie();
+        if (movie) {
+            AP4_List<AP4_Track>& tracks = movie->GetTracks();
+            for (unsigned int i = 0; i < tracks.ItemCount(); i++) {
+                AP4_Track* track = NULL;
+                tracks.Get(i, track);
+                if (track) {
+                    AP4_SampleDescription* sdesc = track->GetSampleDescription(0);
+                    if (sdesc && sdesc->GetType() == AP4_SampleDescription::TYPE_PROTECTED) {
+                        AP4_ProtectedSampleDescription* psdesc = AP4_DYNAMIC_CAST(AP4_ProtectedSampleDescription, sdesc);
+                        if (psdesc) {
+                            if (psdesc->GetSchemeType() == AP4_PROTECTION_SCHEME_TYPE_CENC ||
+                                psdesc->GetSchemeType() == AP4_PROTECTION_SCHEME_TYPE_CBC1 ||
+                                psdesc->GetSchemeType() == AP4_PROTECTION_SCHEME_TYPE_CENS ||
+                                psdesc->GetSchemeType() == AP4_PROTECTION_SCHEME_TYPE_CBCS) {
+                                processor = new AP4_CencDecryptingProcessor(&key_map);
+                                break;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    if (processor == NULL) {
+        processor = new AP4_StandardDecryptingProcessor(&key_map);
+    }
+
+    return processor;
+}
+
+AP4_Result
+AP4_DecryptFile(const char*  input_filename,
+                const char*  output_filename,
+                const char** keys,
+                unsigned int key_count,
+                const char*  fragments_info_filename,
+                int          /*show_progress*/)
+{
+    if (input_filename == NULL || output_filename == NULL || keys == NULL || key_count == 0) {
+        return AP4_ERROR_INVALID_PARAMETERS;
+    }
+
+    AP4_ProtectionKeyMap key_map;
+    for (unsigned int i = 0; i < key_count; i++) {
+        AP4_Result result = AP4_AddDecryptKey(key_map, keys[i]);
+        if (AP4_FAILED(result)) {
+            return result;
+        }
+    }
+
+    AP4_Result result;
+    AP4_ByteStream* input = NULL;
+    result = AP4_FileByteStream::Create(input_filename, AP4_FileByteStream::STREAM_MODE_READ, input);
+    if (AP4_FAILED(result)) {
+        return result;
+    }
+
+    AP4_ByteStream* output = NULL;
+    result = AP4_FileByteStream::Create(output_filename, AP4_FileByteStream::STREAM_MODE_WRITE, output);
+    if (AP4_FAILED(result)) {
+        input->Release();
+        return result;
+    }
+
+    AP4_ByteStream* fragments_info = NULL;
+    if (fragments_info_filename && fragments_info_filename[0]) {
+        result = AP4_FileByteStream::Create(fragments_info_filename, AP4_FileByteStream::STREAM_MODE_READ, fragments_info);
+        if (AP4_FAILED(result)) {
+            input->Release();
+            output->Release();
+            return result;
+        }
+    }
+
+    AP4_File* input_file = new AP4_File(fragments_info ? *fragments_info : *input);
+    AP4_Processor* processor = AP4_CreateDecryptingProcessor(*input_file, key_map);
+    delete input_file;
+
+    if (fragments_info) {
+        fragments_info->Seek(0);
+    } else {
+        input->Seek(0);
+    }
+
+    if (fragments_info) {
+        result = processor->Process(*input, *output, *fragments_info, NULL);
+    } else {
+        result = processor->Process(*input, *output, NULL);
+    }
+
+    delete processor;
+    if (fragments_info) fragments_info->Release();
+    input->Release();
+    output->Release();
+
+    return result;
+}
+
+static AP4_Result
+AP4_WideToUtf8(const wchar_t* wide, std::string& utf8)
+{
+    utf8.clear();
+    if (wide == NULL || wide[0] == 0) {
+        return AP4_SUCCESS;
+    }
+
+#if defined(_WIN32)
+    int utf8_length = WideCharToMultiByte(CP_UTF8, 0, wide, -1, NULL, 0, NULL, NULL);
+    if (utf8_length == 0) {
+        return AP4_FAILURE;
+    }
+
+    std::vector<char> buffer(utf8_length);
+    if (WideCharToMultiByte(CP_UTF8, 0, wide, -1, &buffer[0], utf8_length, NULL, NULL) == 0) {
+        return AP4_FAILURE;
+    }
+
+    utf8.assign(&buffer[0]);
+    return AP4_SUCCESS;
+#else
+    while (*wide) {
+        if (*wide > 0x7F) {
+            return AP4_ERROR_NOT_SUPPORTED;
+        }
+        utf8 += (char)*wide++;
+    }
+    return AP4_SUCCESS;
+#endif
+}
+
+AP4_Result
+AP4_DecryptFileW(const wchar_t*  input_filename,
+                 const wchar_t*  output_filename,
+                 const wchar_t** keys,
+                 unsigned int    key_count,
+                 const wchar_t*  fragments_info_filename,
+                 int             show_progress)
+{
+    if (input_filename == NULL || output_filename == NULL || keys == NULL || key_count == 0) {
+        return AP4_ERROR_INVALID_PARAMETERS;
+    }
+
+    std::string input_filename_utf8;
+    std::string output_filename_utf8;
+    std::string fragments_info_filename_utf8;
+    AP4_Result result = AP4_WideToUtf8(input_filename, input_filename_utf8);
+    if (AP4_FAILED(result)) return result;
+    result = AP4_WideToUtf8(output_filename, output_filename_utf8);
+    if (AP4_FAILED(result)) return result;
+    result = AP4_WideToUtf8(fragments_info_filename, fragments_info_filename_utf8);
+    if (AP4_FAILED(result)) return result;
+
+    std::vector<std::string> keys_utf8(key_count);
+    std::vector<const char*> key_ptrs(key_count);
+    for (unsigned int i = 0; i < key_count; i++) {
+        result = AP4_WideToUtf8(keys[i], keys_utf8[i]);
+        if (AP4_FAILED(result)) return result;
+        key_ptrs[i] = keys_utf8[i].c_str();
+    }
+
+    return AP4_DecryptFile(input_filename_utf8.c_str(),
+                           output_filename_utf8.c_str(),
+                           &key_ptrs[0],
+                           key_count,
+                           fragments_info_filename_utf8.empty() ? NULL : fragments_info_filename_utf8.c_str(),
+                           show_progress);
+}
 
 

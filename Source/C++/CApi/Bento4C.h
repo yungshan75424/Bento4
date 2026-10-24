@@ -30,6 +30,7 @@
 |   includes
 +---------------------------------------------------------------------*/
 #include "Ap4Types.h"
+#include <wchar.h>
 
 /*----------------------------------------------------------------------
 |   types
@@ -894,6 +895,25 @@ AP4_PrintInspector_Create(AP4_ByteStream* stream);
 
 AP4_AtomInspector*
 AP4_AtomInspector_FromDelegate(AP4_AtomInspectorDelegate* delegate);
+
+/*----------------------------------------------------------------------
+|   AP4 decrypt helpers
++---------------------------------------------------------------------*/
+AP4_Result
+AP4_DecryptFile(const char*  input_filename,
+                const char*  output_filename,
+                const char** keys,
+                unsigned int key_count,
+                const char*  fragments_info_filename,
+                int          show_progress);
+
+AP4_Result
+AP4_DecryptFileW(const wchar_t*  input_filename,
+                 const wchar_t*  output_filename,
+                 const wchar_t** keys,
+                 unsigned int    key_count,
+                 const wchar_t*  fragments_info_filename,
+                 int             show_progress);
 
 #ifdef __cplusplus
 }

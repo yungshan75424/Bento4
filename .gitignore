@@ -55,3 +55,13 @@ coverage_html
 Test/Output
 Build/Targets/x86_64-microsoft-win32-vs2019/.vs
 Documents/MkDocs/site
+
+# C# build output
+Source/CSharp/**/bin/
+Source/CSharp/**/obj/
+
+# Local CMake build output
+/build-linux/
+
+# Visual Studio upgrade logs
+/Build/Targets/x86_64-microsoft-win32-vs2019/UpgradeLog*.htm

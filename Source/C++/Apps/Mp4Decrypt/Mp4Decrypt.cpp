@@ -32,6 +32,12 @@
 #include <stdio.h>
 #include <stdlib.h>
 
+#if defined(_WIN32) && !defined(_WIN32_WCE)
+#include <windows.h>
+#include <shellapi.h>
+#pragma comment(lib, "Shell32.lib")
+#endif
+
 #include "Ap4.h"
 
 /*----------------------------------------------------------------------
@@ -84,10 +90,10 @@ ProgressListener::OnProgress(unsigned int step, unsigned int total)
 }
 
 /*----------------------------------------------------------------------
-|   main
+|   Mp4DecryptMain
 +---------------------------------------------------------------------*/
-int
-main(int argc, char** argv)
+static int
+Mp4DecryptMain(int argc, char** argv)
 {
     if (argc == 1) {
         PrintUsageAndExit();
@@ -268,3 +274,62 @@ main(int argc, char** argv)
 
     return 0;
 }
+
+#if defined(_WIN32) && !defined(_WIN32_WCE)
+/*----------------------------------------------------------------------
+|   main
++---------------------------------------------------------------------*/
+int
+main(int /*argc*/, char** /*argv*/)
+{
+    int    argc = 0;
+    LPWSTR command_line = GetCommandLineW();
+    LPWSTR* argv = CommandLineToArgvW(command_line, &argc);
+    if (argv == NULL) {
+        return 1;
+    }
+
+    char** argv_utf8 = new char*[argc+1];
+    for (int i = 0; i < argc; i++) {
+        int utf8_length = WideCharToMultiByte(CP_UTF8, 0, argv[i], -1, NULL, 0, NULL, NULL);
+        if (utf8_length == 0) {
+            for (int j = 0; j < i; j++) {
+                delete[] argv_utf8[j];
+            }
+            delete[] argv_utf8;
+            LocalFree(argv);
+            return 1;
+        }
+
+        argv_utf8[i] = new char[utf8_length];
+        if (WideCharToMultiByte(CP_UTF8, 0, argv[i], -1, argv_utf8[i], utf8_length, NULL, NULL) == 0) {
+            for (int j = 0; j <= i; j++) {
+                delete[] argv_utf8[j];
+            }
+            delete[] argv_utf8;
+            LocalFree(argv);
+            return 1;
+        }
+    }
+    argv_utf8[argc] = NULL;
+
+    int result = Mp4DecryptMain(argc, argv_utf8);
+
+    for (int i = 0; i < argc; i++) {
+        delete[] argv_utf8[i];
+    }
+    delete[] argv_utf8;
+    LocalFree(argv);
+
+    return result;
+}
+#else
+/*----------------------------------------------------------------------
+|   main
++---------------------------------------------------------------------*/
+int
+main(int argc, char** argv)
+{
+    return Mp4DecryptMain(argc, argv);
+}
+#endif
