@@ -4,16 +4,46 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <AssemblyName>Bento4Sharp</AssemblyName>
+    <Bento4NativeRoot>$([System.IO.Path]::GetFullPath('$(MSBuildThisFileDirectory)../../../Build/Targets/x86_64-microsoft-win32-vs2019/'))</Bento4NativeRoot>
+    <Bento4NativeOutput>$(Bento4NativeRoot)/x64/$(Configuration)/</Bento4NativeOutput>
+    <Bento4NativeDll>$(Bento4NativeOutput)Bento4CDll.dll</Bento4NativeDll>
+    <BuildBento4Native Condition="'$(BuildBento4Native)' == '' And '$(OS)' == 'Windows_NT'">true</BuildBento4Native>
+    <Bento4VsWhere>$(MSBuildProgramFiles32)/Microsoft Visual Studio/Installer/vswhere.exe</Bento4VsWhere>
   </PropertyGroup>
 
+  <!-- Include the future output before it exists so a clean build also copies it transitively. -->
   <ItemGroup>
-    <None Include="..\..\..\Build\Targets\x86_64-microsoft-win32-vs2019\Bento4CDll\x64\Release\Bento4CDll.dll"
-          Link="runtimes\win-x64\native\Bento4CDll.dll"
+    <None Include="$(Bento4NativeDll)"
+          Link="runtimes/win-x64/native/Bento4CDll.dll"
           CopyToOutputDirectory="PreserveNewest"
-          Condition="Exists('..\..\..\Build\Targets\x86_64-microsoft-win32-vs2019\Bento4CDll\x64\Release\Bento4CDll.dll')" />
-    <None Include="..\..\..\build-linux\libBento4C.so"
-          Link="runtimes\linux-x64\native\libBento4C.so"
+          CopyToPublishDirectory="PreserveNewest"
+          Condition="'$(OS)' == 'Windows_NT'" />
+    <None Include="../../../build-linux/libBento4C.so"
+          Link="runtimes/linux-x64/native/libBento4C.so"
           CopyToOutputDirectory="PreserveNewest"
-          Condition="Exists('..\..\..\build-linux\libBento4C.so')" />
+          CopyToPublishDirectory="PreserveNewest"
+          Condition="Exists('../../../build-linux/libBento4C.so')" />
   </ItemGroup>
+
+  <Target Name="BuildBento4NativeLibrary"
+          BeforeTargets="PrepareForBuild;GetCopyToOutputDirectoryItems;GetCopyToPublishDirectoryItems"
+          Condition="'$(BuildBento4Native)' == 'true' And '$(DesignTimeBuild)' != 'true'">
+    <Error Condition="'$(RuntimeIdentifier)' != '' And '$(RuntimeIdentifier)' != 'win-x64'"
+           Text="Bento4 native build currently supports win-x64 only." />
+    <Error Condition="'$(Bento4MSBuildExe)' == '' And !Exists('$(Bento4VsWhere)')"
+           Text="Visual Studio C++ build tools were not found. Install MSVC v142 and a Windows SDK, or set Bento4MSBuildExe." />
+    <Exec Condition="'$(Bento4MSBuildExe)' == ''"
+          Command="&quot;$(Bento4VsWhere)&quot; -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -find MSBuild/Current/Bin/MSBuild.exe"
+          ConsoleToMSBuild="true" StandardOutputImportance="Low">
+      <Output TaskParameter="ConsoleOutput" ItemName="Bento4MSBuildCandidates" />
+    </Exec>
+    <PropertyGroup>
+      <Bento4MSBuildExe Condition="'$(Bento4MSBuildExe)' == ''">@(Bento4MSBuildCandidates)</Bento4MSBuildExe>
+    </PropertyGroup>
+    <Error Condition="!Exists('$(Bento4MSBuildExe)')"
+           Text="Visual Studio MSBuild with C++ tools was not found. Install MSVC v142 and a Windows SDK, or set Bento4MSBuildExe." />
+    <Message Importance="high" Text="Building Bento4 native library ($(Configuration), x64)..." />
+    <Exec Command="&quot;$(Bento4MSBuildExe)&quot; &quot;$(Bento4NativeRoot)/Bento4CDll/Bento4CDll.vcxproj&quot; /t:Build /p:Configuration=$(Configuration) /p:Platform=x64 /p:OutDir=&quot;$(Bento4NativeOutput)&quot; /m /nologo /v:minimal" />
+    <Error Condition="!Exists('$(Bento4NativeDll)')" Text="Native build did not produce $(Bento4NativeDll)." />
+  </Target>
 </Project>
